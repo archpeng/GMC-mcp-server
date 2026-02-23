@@ -4,3 +4,6 @@ __pycache__/
 .env
 *.json
 !.env.example
+
+# Service account credentials and other private files
+private/
