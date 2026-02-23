@@ -1,50 +1,37 @@
-"""Shipping settings tools."""
+"""Shipping settings tools — new Merchant API (accounts_v1beta)."""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from tools._common import mcp, _get_service, _merchant_id
+from tools._common import mcp, account_name, get_shipping_client
 
 
 @mcp.tool()
 def get_shipping_settings() -> Dict[str, Any]:
-    """Get current shipping settings for the GMC account (services, rates, addresses)."""
-    svc = _get_service()
-    return svc.shippingsettings().get(
-        merchantId=_merchant_id(), accountId=_merchant_id()
-    ).execute()
+    """Get current shipping settings (services, carriers, rates) for this account."""
+    client = get_shipping_client()
+    from google.shopping import merchant_accounts_v1beta
+    name = f"{account_name()}/shippingSettings"
+    request = merchant_accounts_v1beta.GetShippingSettingsRequest(name=name)
+    settings = client.get_shipping_settings(request=request)
+    return type(settings).to_dict(settings)
 
 
 @mcp.tool()
-def update_shipping_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
-    """Update shipping settings for the account (full replacement).
+def update_shipping_settings(shipping_settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Update shipping settings for this account (full replacement).
 
-    ⚠️ This replaces the ENTIRE shipping configuration. Fetch current settings
-    with get_shipping_settings first, modify, then pass the full updated object.
+    ⚠️ Fetch current settings with get_shipping_settings first, modify, then pass full object.
 
     Args:
-        settings: Full shipping settings resource dict.
+        shipping_settings: Full ShippingSettings resource dict.
     """
-    svc = _get_service()
-    return svc.shippingsettings().update(
-        merchantId=_merchant_id(), accountId=_merchant_id(), body=settings
-    ).execute()
-
-
-@mcp.tool()
-def get_supported_carriers() -> Dict[str, Any]:
-    """List all shipping carriers supported by Google for this merchant's country."""
-    svc = _get_service()
-    return svc.shippingsettings().getsupportedcarriers(
-        merchantId=_merchant_id()
-    ).execute()
-
-
-@mcp.tool()
-def get_supported_holidays() -> Dict[str, Any]:
-    """List holidays supported for carrier-calculated shipping cutoffs."""
-    svc = _get_service()
-    return svc.shippingsettings().getsupportedholidays(
-        merchantId=_merchant_id()
-    ).execute()
+    client = get_shipping_client()
+    from google.shopping import merchant_accounts_v1beta
+    request = merchant_accounts_v1beta.InsertShippingSettingsRequest(
+        parent=account_name(),
+        shipping_setting=shipping_settings,
+    )
+    result = client.insert_shipping_settings(request=request)
+    return type(result).to_dict(result)

@@ -1,72 +1,94 @@
-"""Inventory tools — regional and local inventory management."""
+"""Inventory tools — new Merchant API (inventories_v1beta)."""
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from tools._common import mcp, _get_service, _merchant_id
-
-
-@mcp.tool()
-def insert_regional_inventory(
-    product_id: str,
-    region_id: str,
-    price: Dict[str, str],
-    availability: str = "in stock",
-    sale_price: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
-    """Set regional pricing/availability overrides for a product.
-
-    Use this to set different prices for DE vs AT vs CH without modifying the base product.
-
-    Args:
-        product_id: Full REST product ID, e.g. 'online:de:DE:SKU123'.
-        region_id: Region ID (from list_regions). e.g. '1234567'.
-        price: Dict with 'value' and 'currency', e.g. {'value': '49.99', 'currency': 'EUR'}.
-        availability: 'in stock', 'out of stock', or 'preorder'.
-        sale_price: Optional sale price dict.
-    """
-    svc = _get_service()
-    body: Dict[str, Any] = {
-        "regionId": region_id,
-        "price": price,
-        "availability": availability,
-    }
-    if sale_price:
-        body["salePrice"] = sale_price
-    return svc.regionalinventory().insert(
-        merchantId=_merchant_id(), productId=product_id, body=body
-    ).execute()
+from tools._common import (
+    mcp,
+    account_name,
+    get_local_inventory_client,
+    get_regional_inventory_client,
+)
 
 
 @mcp.tool()
 def insert_local_inventory(
-    product_id: str,
+    product_name: str,
     store_code: str,
     quantity: int,
-    price: Dict[str, str],
-    availability: str = "in stock",
+    price_amount_micros: str,
+    price_currency: str = "EUR",
+    availability: str = "IN_STOCK",
 ) -> Dict[str, Any]:
-    """Update local store inventory for a product (for local inventory ads).
+    """Set or update local store inventory for a product.
 
     Args:
-        product_id: Full REST product ID.
-        store_code: Store code as configured in your GMC local inventory setup.
+        product_name: Full product resource name, e.g. 'accounts/12345/products/online~de~DE~SKU'.
+        store_code: Your GMC store code.
         quantity: Available quantity at this store.
-        price: Dict with 'value' and 'currency'.
-        availability: 'in stock', 'out of stock', 'limited availability'.
+        price_amount_micros: Price in micros (e.g. '4999000000' = 49.99 EUR).
+        price_currency: ISO 4217 currency code, e.g. 'EUR'.
+        availability: 'IN_STOCK', 'OUT_OF_STOCK', or 'LIMITED_AVAILABILITY'.
     """
-    svc = _get_service()
-    body: Dict[str, Any] = {
+    client = get_local_inventory_client()
+    from google.shopping import merchant_inventories_v1beta
+    local_inventory = {
         "storeCode": store_code,
-        "quantity": quantity,
-        "price": price,
         "availability": availability,
+        "quantity": quantity,
+        "price": {
+            "amountMicros": price_amount_micros,
+            "currencyCode": price_currency,
+        },
     }
-    return svc.localinventory().insert(
-        merchantId=_merchant_id(), productId=product_id, body=body
-    ).execute()
+    request = merchant_inventories_v1beta.InsertLocalInventoryRequest(
+        parent=product_name,
+        local_inventory=local_inventory,
+    )
+    result = client.insert_local_inventory(request=request)
+    return type(result).to_dict(result)
 
 
-# Optional import needed for sale_price parameter
-from typing import Optional  # noqa: E402
+@mcp.tool()
+def insert_regional_inventory(
+    product_name: str,
+    region: str,
+    price_amount_micros: str,
+    price_currency: str = "EUR",
+    availability: str = "IN_STOCK",
+    sale_price_amount_micros: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Set regional price/availability override for a product.
+
+    Use this to offer different prices per region (e.g. DE vs AT vs CH).
+
+    Args:
+        product_name: Full product resource name.
+        region: Region resource name, e.g. 'accounts/12345/regions/region-id'.
+        price_amount_micros: Price in micros.
+        price_currency: ISO 4217 currency code.
+        availability: 'IN_STOCK', 'OUT_OF_STOCK'.
+        sale_price_amount_micros: Optional sale price in micros.
+    """
+    client = get_regional_inventory_client()
+    from google.shopping import merchant_inventories_v1beta
+    regional_inventory: Dict[str, Any] = {
+        "region": region,
+        "availability": availability,
+        "price": {
+            "amountMicros": price_amount_micros,
+            "currencyCode": price_currency,
+        },
+    }
+    if sale_price_amount_micros:
+        regional_inventory["salePrice"] = {
+            "amountMicros": sale_price_amount_micros,
+            "currencyCode": price_currency,
+        }
+    request = merchant_inventories_v1beta.InsertRegionalInventoryRequest(
+        parent=product_name,
+        regional_inventory=regional_inventory,
+    )
+    result = client.insert_regional_inventory(request=request)
+    return type(result).to_dict(result)

@@ -1,46 +1,180 @@
-"""Shared MCP instance, Merchant API client singleton, and helper functions."""
+"""Shared client factories for the new Google Merchant API.
+
+Each sub-service has its own typed gRPC-backed client.
+All resources are addressed as: accounts/{merchant_id}/...
+"""
 
 from __future__ import annotations
 
-import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 import google.auth
-import googleapiclient.discovery
-from mcp.server.fastmcp import FastMCP
 
-logger = logging.getLogger(__name__)
+_MERCHANT_SCOPE = "https://www.googleapis.com/auth/merchantcenter"
 
-_GMC_SCOPE = "https://www.googleapis.com/auth/content"
-_API_NAME = "content"
-_API_VERSION = "v2.1"
 
-mcp = FastMCP("Google Merchant Center")
-
-_service: Optional[Any] = None
-
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
 
 def _require_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise ValueError(f"Missing required env var: {name}")
-    return value
+    val = os.environ.get(name, "").strip()
+    if not val:
+        raise RuntimeError(f"Environment variable {name!r} is not set. "
+                           f"Copy .env.example to .env and fill it in.")
+    return val
 
 
-def _get_service() -> Any:
-    """Return a cached Google Content API (Merchant API) service object."""
-    global _service
-    if _service is not None:
-        return _service
-
-    credentials, _ = google.auth.default(scopes=[_GMC_SCOPE])
-    _service = googleapiclient.discovery.build(
-        _API_NAME, _API_VERSION, credentials=credentials
-    )
-    return _service
-
-
-def _merchant_id() -> str:
-    """Return the configured GMC Merchant ID from env."""
+def merchant_id() -> str:
+    """Return the GMC numeric Merchant ID from env."""
     return _require_env("GMC_MERCHANT_ID")
+
+
+def account_name() -> str:
+    """Return the fully-qualified account resource name accounts/{id}."""
+    return f"accounts/{merchant_id()}"
+
+
+def _get_credentials() -> Any:
+    credentials, _ = google.auth.default(scopes=[_MERCHANT_SCOPE])
+    return credentials
+
+
+# ---------------------------------------------------------------------------
+# Per-sub-service client singletons
+# ---------------------------------------------------------------------------
+
+_clients: dict[str, Any] = {}
+
+
+def _get_client(key: str, factory_fn) -> Any:
+    if key not in _clients:
+        _clients[key] = factory_fn(_get_credentials())
+    return _clients[key]
+
+
+def get_products_client():
+    """Products read client (ProductsServiceClient)."""
+    from google.shopping import merchant_products_v1
+    return _get_client(
+        "products",
+        lambda creds: merchant_products_v1.ProductsServiceClient(credentials=creds),
+    )
+
+
+def get_product_inputs_client():
+    """Product inputs write client (ProductInputsServiceClient)."""
+    from google.shopping import merchant_products_v1
+    return _get_client(
+        "product_inputs",
+        lambda creds: merchant_products_v1.ProductInputsServiceClient(credentials=creds),
+    )
+
+
+def get_datasources_client():
+    """Data sources client (DataSourcesServiceClient)."""
+    from google.shopping import merchant_datasources_v1
+    return _get_client(
+        "datasources",
+        lambda creds: merchant_datasources_v1.DataSourcesServiceClient(credentials=creds),
+    )
+
+
+def get_reports_client():
+    """Reports client (ReportServiceClient)."""
+    from google.shopping import merchant_reports_v1beta
+    return _get_client(
+        "reports",
+        lambda creds: merchant_reports_v1beta.ReportServiceClient(credentials=creds),
+    )
+
+
+def get_accounts_client():
+    """Accounts client (AccountsServiceClient)."""
+    from google.shopping import merchant_accounts_v1beta
+    return _get_client(
+        "accounts",
+        lambda creds: merchant_accounts_v1beta.AccountsServiceClient(credentials=creds),
+    )
+
+
+def get_accounts_issues_client():
+    """Account issues client (AccountIssueServiceClient)."""
+    from google.shopping import merchant_accounts_v1beta
+    return _get_client(
+        "account_issues",
+        lambda creds: merchant_accounts_v1beta.AccountIssueServiceClient(credentials=creds),
+    )
+
+
+def get_programs_client():
+    """Programs client (ProgramsServiceClient) — Shopping Ads, Free Listings."""
+    from google.shopping import merchant_accounts_v1beta
+    return _get_client(
+        "programs",
+        lambda creds: merchant_accounts_v1beta.ProgramsServiceClient(credentials=creds),
+    )
+
+
+def get_shipping_client():
+    """Shipping settings client."""
+    from google.shopping import merchant_accounts_v1beta
+    return _get_client(
+        "shipping",
+        lambda creds: merchant_accounts_v1beta.ShippingSettingsServiceClient(credentials=creds),
+    )
+
+
+def get_return_policy_client():
+    """Online return policy client."""
+    from google.shopping import merchant_accounts_v1beta
+    return _get_client(
+        "return_policy",
+        lambda creds: merchant_accounts_v1beta.OnlineReturnPolicyServiceClient(credentials=creds),
+    )
+
+
+def get_local_inventory_client():
+    """Local inventory client."""
+    from google.shopping import merchant_inventories_v1beta
+    return _get_client(
+        "local_inventory",
+        lambda creds: merchant_inventories_v1beta.LocalInventoryServiceClient(credentials=creds),
+    )
+
+
+def get_regional_inventory_client():
+    """Regional inventory client."""
+    from google.shopping import merchant_inventories_v1beta
+    return _get_client(
+        "regional_inventory",
+        lambda creds: merchant_inventories_v1beta.RegionalInventoryServiceClient(credentials=creds),
+    )
+
+
+def get_promotions_client():
+    """Promotions client."""
+    from google.shopping import merchant_promotions_v1
+    return _get_client(
+        "promotions",
+        lambda creds: merchant_promotions_v1.PromotionsServiceClient(credentials=creds),
+    )
+
+
+def get_issueresolution_client():
+    """Issue resolution client (render issues + trigger actions)."""
+    from google.shopping import merchant_issueresolution_v1beta
+    return _get_client(
+        "issueresolution",
+        lambda creds: merchant_issueresolution_v1beta.IssueResolutionClient(credentials=creds),
+    )
+
+
+# ---------------------------------------------------------------------------
+# MCP instance (shared across all tool modules)
+# ---------------------------------------------------------------------------
+
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+mcp = FastMCP("Google Merchant Center")

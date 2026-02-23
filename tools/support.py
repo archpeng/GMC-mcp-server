@@ -1,62 +1,65 @@
-"""Merchant Support tools — render issues and trigger support actions."""
+"""Support / issue resolution tools — new Merchant API."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from tools._common import mcp, _get_service, _merchant_id
+from tools._common import mcp, account_name, get_issueresolution_client
 
 
 @mcp.tool()
 def render_account_issues(language_code: str = "de") -> Dict[str, Any]:
-    """Get a human-readable list of account-level issues with fix suggestions.
+    """Get human-readable account issues with actionable fix steps.
 
-    This endpoint surfaces the same issues shown in the GMC UI, including
-    policy violations like Misrepresentation, with actionable resolution steps.
+    This surfaces the same issues as the GMC UI Policy tab, including
+    Misrepresentation, with step-by-step resolution instructions.
 
     Args:
-        language_code: BCP 47 language code for the response, e.g. 'de', 'en'.
+        language_code: BCP 47 language code, e.g. 'de', 'en'.
     """
-    svc = _get_service()
-    return svc.merchantsupport().renderaccountissues(
-        merchantId=_merchant_id(),
-        body={},
-        languageCode=language_code,
-    ).execute()
+    client = get_issueresolution_client()
+    from google.shopping import merchant_issueresolution_v1beta
+    request = merchant_issueresolution_v1beta.RenderAccountIssuesRequest(
+        parent=account_name(),
+        language_code=language_code,
+    )
+    response = client.render_account_issues(request=request)
+    return type(response).to_dict(response)
 
 
 @mcp.tool()
-def render_product_issues(product_id: str, language_code: str = "de") -> Dict[str, Any]:
-    """Get a human-readable list of issues for a single product with fix suggestions.
+def render_product_issues(product_name: str, language_code: str = "de") -> Dict[str, Any]:
+    """Get human-readable issues for a single product with fix steps.
 
     Args:
-        product_id: Full REST product ID, e.g. 'online:de:DE:SKU123'.
-        language_code: BCP 47 language code for the response.
+        product_name: Full resource name, e.g. 'accounts/12345/products/online~de~DE~SKU'.
+        language_code: BCP 47 language code.
     """
-    svc = _get_service()
-    return svc.merchantsupport().renderproductissues(
-        merchantId=_merchant_id(),
-        productId=product_id,
-        body={},
-        languageCode=language_code,
-    ).execute()
+    client = get_issueresolution_client()
+    from google.shopping import merchant_issueresolution_v1beta
+    request = merchant_issueresolution_v1beta.RenderProductIssuesRequest(
+        parent=product_name,
+        language_code=language_code,
+    )
+    response = client.render_product_issues(request=request)
+    return type(response).to_dict(response)
 
 
 @mcp.tool()
-def trigger_support_action(action_id: str, action_context: Optional[Dict] = None) -> Dict[str, Any]:
-    """Trigger a predefined support action (e.g. appeal or verification step).
+def trigger_issue_action(action_id: str) -> Dict[str, Any]:
+    """Trigger a predefined issue resolution action (e.g. appeal, verification).
 
-    ⚠️ This triggers a REAL action on your GMC account.
-    Get available action_ids from render_account_issues() → actions[].actionId.
+    ⚠️ This triggers a real action on your GMC account.
+    Discover available action_ids from render_account_issues() response.
 
     Args:
-        action_id: The action ID returned by render_account_issues, e.g. 'verify-identity'.
-        action_context: Optional context dict required by some actions.
+        action_id: Action ID from render_account_issues actions list.
     """
-    svc = _get_service()
-    body: Dict[str, Any] = {"actionId": action_id}
-    if action_context:
-        body["actionContext"] = action_context
-    return svc.merchantsupport().triggeraction(
-        merchantId=_merchant_id(), body=body
-    ).execute()
+    client = get_issueresolution_client()
+    from google.shopping import merchant_issueresolution_v1beta
+    request = merchant_issueresolution_v1beta.TriggerActionRequest(
+        parent=account_name(),
+        action=merchant_issueresolution_v1beta.BuiltInUserAction(action_id=action_id),
+    )
+    response = client.trigger_action(request=request)
+    return type(response).to_dict(response)

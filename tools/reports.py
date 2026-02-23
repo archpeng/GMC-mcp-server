@@ -1,10 +1,10 @@
-"""Reports tool — query GMC performance data using the Merchant Reports API."""
+"""Reports tools — new Merchant API (reports_v1beta)."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from tools._common import mcp, _get_service, _merchant_id
+from tools._common import mcp, account_name, get_reports_client
 
 
 @mcp.tool()
@@ -13,35 +13,33 @@ def reports_search(
     page_size: int = 1000,
     page_token: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Query GMC performance reports using the Merchant Query Language (similar to GAQL).
+    """Query GMC performance reports using the Merchant Query Language (MQL).
 
     Available tables: product_performance_view, product_view,
-    price_competitiveness_product_view, price_insights_product_view,
-    best_sellers_product_cluster_view, best_sellers_brand_view,
-    competitive_visibility_competitor_view, competitive_visibility_top_merchant_view.
+    price_competitiveness_product_view, best_sellers_product_cluster_view,
+    competitive_visibility_competitor_view, non_product_performance_view.
 
     Args:
         query: MQL query string. Examples:
-            - "SELECT segments.date, metrics.clicks, metrics.impressions
-               FROM product_performance_view
-               WHERE segments.date BETWEEN '2026-01-01' AND '2026-02-23'"
-            - "SELECT product_view.id, product_view.title, product_view.channel_exclusivity
-               FROM product_view WHERE product_view.channel = 'ONLINE'"
-        page_size: Max rows to return per page (max 1000).
+            "SELECT segments.date, metrics.clicks, metrics.impressions
+             FROM product_performance_view
+             WHERE segments.date BETWEEN '2026-01-01' AND '2026-02-23'"
+        page_size: Max rows (max 1000).
         page_token: Pagination token.
-
-    Returns:
-        Dict with 'results' list, 'nextPageToken', and 'totalResultsCount'.
     """
-    svc = _get_service()
-    body: Dict[str, Any] = {"query": query, "pageSize": min(page_size, 1000)}
-    if page_token:
-        body["pageToken"] = page_token
-    resp = svc.reports().search(merchantId=_merchant_id(), body=body).execute()
+    client = get_reports_client()
+    from google.shopping import merchant_reports_v1beta
+    request = merchant_reports_v1beta.SearchRequest(
+        parent=account_name(),
+        query=query,
+        page_size=min(page_size, 1000),
+        **({"page_token": page_token} if page_token else {}),
+    )
+    response = client.search(request=request)
+    results = [type(r).to_dict(r) for r in response.results]
     return {
-        "results": resp.get("results", []),
-        "nextPageToken": resp.get("nextPageToken"),
-        "totalResultsCount": resp.get("totalResultsCount"),
+        "results": results,
+        "totalReturned": len(results),
     }
 
 
@@ -51,23 +49,19 @@ def get_product_performance(
     end_date: str = "2026-02-23",
     limit: int = 100,
 ) -> Dict[str, Any]:
-    """Get click and impression performance for products. Convenience wrapper around reports_search.
+    """Get click and impression performance for products by date range.
 
     Args:
-        start_date: Start date in YYYY-MM-DD format.
-        end_date: End date in YYYY-MM-DD format.
-        limit: Max rows to return.
+        start_date: YYYY-MM-DD format.
+        end_date: YYYY-MM-DD format.
+        limit: Max rows.
     """
-    query = f"""
-        SELECT
-            segments.date,
-            segments.program,
-            metrics.clicks,
-            metrics.impressions,
-            metrics.click_through_rate
-        FROM product_performance_view
-        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
-        ORDER BY metrics.clicks DESC
-        LIMIT {limit}
-    """
-    return reports_search(query.strip(), page_size=limit)
+    query = (
+        f"SELECT segments.date, segments.program, metrics.clicks, "
+        f"metrics.impressions, metrics.click_through_rate "
+        f"FROM product_performance_view "
+        f"WHERE segments.date BETWEEN '{start_date}' AND '{end_date}' "
+        f"ORDER BY metrics.clicks DESC "
+        f"LIMIT {limit}"
+    )
+    return reports_search(query, page_size=limit)

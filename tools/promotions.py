@@ -1,98 +1,74 @@
-"""Promotions tools — create and list GMC promotions."""
+"""Promotions tools — new Merchant API (promotions_v1)."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from tools._common import mcp, _get_service, _merchant_id
+from tools._common import mcp, account_name, get_promotions_client
 
 
 @mcp.tool()
-def list_promotions(
-    language_code: str = "de",
-    country_code: str = "DE",
-) -> Dict[str, Any]:
-    """List all active promotions for this GMC account.
-
-    Args:
-        language_code: BCP 47 language code, e.g. 'de', 'en'.
-        country_code: ISO 3166-1 alpha-2 country code, e.g. 'DE'.
-    """
-    svc = _get_service()
-    resp = svc.promotions().list(
-        merchantId=_merchant_id(),
-        languageCode=language_code,
-        countryCode=country_code,
-    ).execute()
-    return {
-        "promotions": resp.get("promotions", []),
-        "totalReturned": len(resp.get("promotions", [])),
-    }
+def list_promotions() -> Dict[str, Any]:
+    """List all promotions for this GMC account."""
+    client = get_promotions_client()
+    from google.shopping import merchant_promotions_v1
+    request = merchant_promotions_v1.ListPromotionsRequest(parent=account_name())
+    promotions = [type(p).to_dict(p) for p in client.list_promotions(request=request)]
+    return {"promotions": promotions, "totalReturned": len(promotions)}
 
 
 @mcp.tool()
-def get_promotion(promotion_id: str) -> Dict[str, Any]:
+def get_promotion(promotion_name: str) -> Dict[str, Any]:
     """Get details of a single promotion.
 
     Args:
-        promotion_id: The promotion ID (from list_promotions).
+        promotion_name: Full resource name, e.g. 'accounts/12345/promotions/promo-id'.
     """
-    svc = _get_service()
-    return svc.promotions().get(
-        merchantId=_merchant_id(), id=promotion_id
-    ).execute()
+    client = get_promotions_client()
+    from google.shopping import merchant_promotions_v1
+    request = merchant_promotions_v1.GetPromotionRequest(name=promotion_name)
+    promo = client.get_promotion(request=request)
+    return type(promo).to_dict(promo)
 
 
 @mcp.tool()
 def create_promotion(
     promotion_id: str,
-    title: str,
-    product_applicability: str,
-    offer_type: str,
+    content_language: str,
+    target_country: str,
     redemption_channel: List[str],
-    promotion_effective_time_period: Dict[str, str],
-    generic_redemption_code: Optional[str] = None,
-    long_title: Optional[str] = None,
-    percent_off: Optional[int] = None,
-    money_off_amount: Optional[Dict[str, str]] = None,
-    target_country: str = "DE",
-    content_language: str = "de",
+    attributes: Dict[str, Any],
+    data_source_id: str,
 ) -> Dict[str, Any]:
-    """Create a new GMC promotion (discount).
+    """Create a new GMC promotion.
 
     Args:
-        promotion_id: Unique ID for this promotion (alphanumeric + hyphens).
-        title: Short title shown in Shopping ads.
-        product_applicability: 'ALL_PRODUCTS' or 'SPECIFIC_PRODUCTS'.
-        offer_type: 'NO_CODE' or 'GENERIC_CODE'.
-        redemption_channel: List of channels, e.g. ['ONLINE'] or ['ONLINE', 'IN_STORE'].
-        promotion_effective_time_period: Dict with 'startTime' and 'endTime' (RFC 3339).
-        generic_redemption_code: Discount code if offer_type is 'GENERIC_CODE'.
-        long_title: Extended description (up to 60 chars).
-        percent_off: Discount percentage (e.g. 10 for 10% off).
-        money_off_amount: Dict with 'value' and 'currency' for fixed discount.
-        target_country: ISO 3166-1 alpha-2 country code.
-        content_language: BCP 47 language code.
+        promotion_id: Unique ID (alphanumeric + hyphens), e.g. 'summer-sale-10off'.
+        content_language: BCP 47 language code, e.g. 'de'.
+        target_country: ISO 3166-1 alpha-2 country code, e.g. 'DE'.
+        redemption_channel: List of channels: 'ONLINE', 'IN_STORE'.
+        attributes: Promotion attributes dict. Required fields:
+            - promotionDisplayTimePeriod: {startTime, endTime}
+            - promotionEffectiveTimePeriod: {startTime, endTime}
+            - offerType: 'NO_CODE' or 'GENERIC_CODE'
+            - productApplicability: 'ALL_PRODUCTS' or 'SPECIFIC_PRODUCTS'
+            Optional: percentOff, moneyOffAmount, genericRedemptionCode, longTitle.
+        data_source_id: Numeric data source ID to link this promotion to.
     """
-    svc = _get_service()
-    body: Dict[str, Any] = {
+    client = get_promotions_client()
+    from google.shopping import merchant_promotions_v1
+    data_source_name = f"{account_name()}/dataSources/{data_source_id}"
+    promotion = {
         "promotionId": promotion_id,
-        "title": title,
         "contentLanguage": content_language,
         "targetCountry": target_country,
-        "productApplicability": product_applicability,
-        "offerType": offer_type,
         "redemptionChannel": redemption_channel,
-        "promotionEffectiveTimePeriod": promotion_effective_time_period,
+        "dataSource": data_source_name,
+        "attributes": attributes,
     }
-    if generic_redemption_code:
-        body["genericRedemptionCode"] = generic_redemption_code
-    if long_title:
-        body["longTitle"] = long_title
-    if percent_off is not None:
-        body["percentOff"] = percent_off
-    if money_off_amount:
-        body["moneyOffAmount"] = money_off_amount
-    return svc.promotions().create(
-        merchantId=_merchant_id(), body=body
-    ).execute()
+    request = merchant_promotions_v1.InsertPromotionRequest(
+        parent=account_name(),
+        promotion=promotion,
+    )
+    result = client.insert_promotion(request=request)
+    return type(result).to_dict(result)
