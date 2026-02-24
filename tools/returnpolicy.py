@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from tools._common import mcp, account_name, get_return_policy_client
+from tools._common import mcp, account_name, get_return_policy_client, _get_credentials_and_token
+
 
 
 @mcp.tool()
@@ -35,29 +36,34 @@ def get_return_policy(return_policy_name: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def create_return_policy(
-    return_policy_id: str,
     label: str,
     countries: List[str],
     return_window_days: int = 30,
     return_method: str = "BY_MAIL",
-    return_shipping_fee_type: str = "FREE",
+    return_shipping_fee_type: str = "CUSTOMER_PAYING_ACTUAL_FEE",
+    return_label_source: str = "CUSTOMER_RESPONSIBILITY",
+    process_refund_days: int = 10,
+    return_policy_uri: str = "",
     item_conditions: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Create a new online return policy in GMC.
+    """Create a new online return policy in GMC via Merchant API v1beta REST.
 
     Args:
-        return_policy_id: Unique ID for this policy, e.g. '30-day-return-de'.
-        label: Human-readable label.
-        countries: List of ISO 3166-1 alpha-2 country codes, e.g. ['DE', 'AT', 'CH'].
-        return_window_days: Number of days allowed for return.
+        label: Human-readable label, e.g. 'Loopsorbit Return Policy (EU)'.
+        countries: ISO 3166-1 alpha-2 codes, e.g. ['DE', 'AT', 'CH'].
+        return_window_days: Days from delivery allowed for return (default 30).
         return_method: 'BY_MAIL', 'IN_STORE', or 'AT_A_KIOSK'.
-        return_shipping_fee_type: 'FREE', 'PAID_BY_CUSTOMER'.
+        return_shipping_fee_type: 'CUSTOMER_PAYING_ACTUAL_FEE', 'FIXED', or 'FREE'.
+        return_label_source: 'CUSTOMER_RESPONSIBILITY', 'DOWNLOAD_AND_PRINT', or 'IN_THE_PACKAGE'.
+        process_refund_days: Business days to process refund after receiving return (default 10).
+        return_policy_uri: URL to the return/refund policy page on your store.
         item_conditions: e.g. ['NEW', 'USED']. Defaults to ['NEW'].
     """
-    client = get_return_policy_client()
-    from google.shopping import merchant_accounts_v1beta
-    policy = {
-        "returnPolicyId": return_policy_id,
+    import requests as http
+    token = _get_credentials_and_token()
+    mid = account_name().split("/")[1]
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload: Dict[str, Any] = {
         "label": label,
         "countries": countries,
         "policy": {
@@ -67,13 +73,18 @@ def create_return_policy(
         "returnMethods": [return_method],
         "returnShippingFee": {"type": return_shipping_fee_type},
         "itemConditions": item_conditions or ["NEW"],
+        "processRefundDays": process_refund_days,
+        "returnLabelSource": return_label_source,
     }
-    request = merchant_accounts_v1beta.CreateOnlineReturnPolicyRequest(
-        parent=account_name(),
-        online_return_policy=policy,
+    if return_policy_uri:
+        payload["returnPolicyUri"] = return_policy_uri
+    r = http.post(
+        f"https://merchantapi.googleapis.com/accounts/v1beta/accounts/{mid}/onlineReturnPolicies",
+        headers=headers,
+        json=payload,
     )
-    result = client.create_online_return_policy(request=request)
-    return type(result).to_dict(result)
+    r.raise_for_status()
+    return r.json()
 
 
 @mcp.tool()

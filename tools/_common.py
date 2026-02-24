@@ -11,7 +11,7 @@ from typing import Any
 
 import google.auth
 
-_MERCHANT_SCOPE = "https://www.googleapis.com/auth/merchantcenter"
+_MERCHANT_SCOPE = "https://www.googleapis.com/auth/content"
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +39,22 @@ def account_name() -> str:
 def _get_credentials() -> Any:
     credentials, _ = google.auth.default(scopes=[_MERCHANT_SCOPE])
     return credentials
+
+
+def _get_credentials_and_token() -> str:
+    """Return a fresh OAuth2 Bearer token string for REST requests."""
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
+    import os
+    sa_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if sa_file:
+        creds = service_account.Credentials.from_service_account_file(
+            sa_file, scopes=[_MERCHANT_SCOPE]
+        )
+    else:
+        creds, _ = google.auth.default(scopes=[_MERCHANT_SCOPE])
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +183,7 @@ def get_issueresolution_client():
     from google.shopping import merchant_issueresolution_v1beta
     return _get_client(
         "issueresolution",
-        lambda creds: merchant_issueresolution_v1beta.IssueResolutionClient(credentials=creds),
+        lambda creds: merchant_issueresolution_v1beta.IssueResolutionServiceClient(credentials=creds),
     )
 
 
